@@ -14,7 +14,7 @@ module Rack
 
       events = []
 
-      subs = ActiveSupport::Notifications.subscribe(//) do |*args|
+      subs = ActiveSupport::Notifications.subscribe(/(process_action.action_controller|sql.active_record)/) do |*args|
         events << ActiveSupport::Notifications::Event.new(*args)
       end
 
@@ -23,26 +23,15 @@ module Rack
       # As the doc states, this harms the internal AS:Notifications
       # caches, but I'd say it's necessary so we don't leak memory
       ActiveSupport::Notifications.unsubscribe(subs)
+      sql_events = events.select{|event| event.name == 'sql.active_record' && event.payload[:name] != 'SCHEMA'}
+      controller_events = events.select{|event| event.name == 'process_action.action_controller'}
 
-      mapped_events = events.group_by { |el|
-        el.name
-      }.map{ |event_name, event_data|
-        agg_time = event_data.map{ |ev|
-          ev.duration
-        }.inject(0){ |curr, accum| curr += accum}
-
-        # We need the string formatter as the scientific notation
-        # a.k.a <number>e[+-]<exponent> is not allowed
-
-        # Time divided by 1000 as it's in milliseconds
-        [event_name, '%.10f' % (agg_time/1000)]
-      }
-
-      # Example output:
-      #   'cpu=0.009; "CPU", mysql=0.005; "MySQL", filesystem=0.006; "Filesystem"'
-      headers['Server-Timing'] = mapped_events.map do |name, elapsed_time|
-        "#{name}=#{elapsed_time}; \"#{name}\""
-      end.join(', ')
+      view_runtime = '%.0f' % controller_events[0].payload[:view_runtime]
+      db_runtime = '%.0f' % controller_events[0].payload[:db_runtime]
+      sql_queries = sql_events.size
+      headers['X-View-Runtime'] =  view_runtime
+      headers['X-Db-Runtime'] =  db_runtime
+      headers['X-Sql-Queries'] =  sql_queries
 
       [status, headers, body]
     end
