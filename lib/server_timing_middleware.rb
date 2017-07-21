@@ -26,21 +26,24 @@ module Rack
       sql_events = events.select{|event| event.name == 'sql.active_record' && event.payload[:name] != 'SCHEMA'}
       controller_events = events.select{|event| event.name == 'process_action.action_controller'}
       
-      view_runtime_payload = controller_events[0].payload[:view_runtime] 
-      db_runtime_payload = controller_events[0].payload[:db_runtime] 
+      #ignore assets
+      if controller_events[0]
+        view_runtime_payload = controller_events[0].payload[:view_runtime] 
+        db_runtime_payload = controller_events[0].payload[:db_runtime] 
 
-      if view_runtime_payload
-        view_runtime = '%.0f' % view_runtime_payload
-        headers['X-View-Runtime'] =  view_runtime
-      end
+        if view_runtime_payload
+          view_runtime = '%.0f' % view_runtime_payload
+          headers['X-View-Runtime'] =  view_runtime
+        end
 
-      if db_runtime_payload
-        db_runtime = '%.0f' % db_runtime_payload
-        headers['X-Db-Runtime'] =  db_runtime
+        if db_runtime_payload
+          db_runtime = '%.0f' % db_runtime_payload
+          headers['X-Db-Runtime'] =  db_runtime
+        end
       end
 
       sql_queries = sql_events.size
-      headers['X-Sql-Queries'] =  sql_queries
+      headers['X-Sql-Queries'] = sql_queries
 
       [status, headers, body]
     end
