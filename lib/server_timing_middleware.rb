@@ -11,18 +11,23 @@ module Rack
       @app = app
     end
     def call(env)
-
       events = []
+      capture_events = ['process_action.action_controller',
+                        'sql.active_record']
+      event_filter = Regexp.new(capture_events.join('|'))
 
-      subs = ActiveSupport::Notifications.subscribe(/(process_action.action_controller|sql.active_record)/) do |*args|
+      subs = ActiveSupport::Notifications.subscribe(event_filter) do |*args|
         events << ActiveSupport::Notifications::Event.new(*args)
       end
 
       status, headers, body = @app.call(env)
 
-      # As the doc states, this harms the internal AS:Notifications
-      # caches, but I'd say it's necessary so we don't leak memory
       ActiveSupport::Notifications.unsubscribe(subs)
+      headers = set_metric_headers(headers, events)
+      [status, headers, body]
+    end
+
+    def set_metric_headers(headers, events)
       sql_events = events.select{|event| event.name == 'sql.active_record' && event.payload[:name] != 'SCHEMA'}
       controller_events = events.select{|event| event.name == 'process_action.action_controller'}
       
@@ -45,7 +50,7 @@ module Rack
       sql_queries = sql_events.size
       headers['X-Sql-Queries'] = sql_queries
 
-      [status, headers, body]
-    end
+      headers
+    end  
   end
 end
